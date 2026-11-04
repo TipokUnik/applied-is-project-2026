@@ -7,32 +7,53 @@ API = "http://127.0.0.1:8000"
 st.set_page_config(page_title="Склад", page_icon="📦", layout="wide")
 st.title("📦 ИС учёта товаров на складе")
 
+# сообщение об успехе, которое показываем после перезапуска страницы
+if "flash" in st.session_state:
+    st.success(st.session_state.pop("flash"))
 
-def get(path):
+
+def get(path, params=None):
     try:
-        return requests.get(f"{API}{path}", timeout=5).json()
+        return requests.get(f"{API}{path}", params=params, timeout=5).json()
     except requests.exceptions.RequestException:
-        st.error("Backend не запущен. Запустите: uvicorn backend.main:app --reload")
+        st.error("Backend не запущен. Запустите: uvicorn app.main:app --reload")
         st.stop()
 
 
 def post(path, data):
     r = requests.post(f"{API}{path}", json=data, timeout=5)
     if r.ok:
-        st.success("Готово!")
+        st.session_state["flash"] = "Готово!"
+        st.rerun()  # перерисовываем страницу, чтобы таблицы обновились сразу
     else:
-        st.error(r.json().get("detail", "Ошибка"))
+        detail = r.json().get("detail", "Ошибка")
+        if isinstance(detail, list):  # ошибки валидации (422)
+            detail = "; ".join(f"{'.'.join(str(x) for x in d['loc'][1:])}: {d['msg']}" for d in detail)
+        st.error(detail)
 
 
 page = st.sidebar.radio("Раздел", ["Товары", "Категории", "Поставщики", "Движение товара"])
 
 if page == "Товары":
     st.subheader("Список товаров")
-    products = get("/products/")
+    c1, c2, c3 = st.columns(3)
+    search = c1.text_input("Поиск по названию")
+    min_price = c2.number_input("Цена от", min_value=0.0, step=100.0)
+    max_price = c3.number_input("Цена до (0 = без ограничения)", min_value=0.0, step=100.0)
+
+    params = {}
+    if search:
+        params["search"] = search
+    if min_price > 0:
+        params["min_price"] = min_price
+    if max_price > 0:
+        params["max_price"] = max_price
+
+    products = get("/products/", params)
     if products:
         st.dataframe(pd.DataFrame(products), use_container_width=True)
     else:
-        st.info("Товаров пока нет")
+        st.info("Товаров не найдено")
 
     st.subheader("Добавить товар")
     cats, sups = get("/categories/"), get("/suppliers/")

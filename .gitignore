@@ -1,3 +1,6 @@
-warehouse.db
 venv/
 __pycache__/
+*.pyc
+.env
+database.db
+warehouse.db
